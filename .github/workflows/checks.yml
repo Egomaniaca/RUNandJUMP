@@ -1,0 +1,71 @@
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  repo-hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: No generated Unreal folders committed
+        run: |
+          bad=$(git ls-files | grep -E '^(Binaries|Build|Intermediate|DerivedDataCache|Saved)/' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::Generated Unreal folders must not be committed:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "OK - no generated folders in the index."
+
+      - name: Unreal binary assets are tracked by Git LFS
+        run: |
+          # Every committed *.uasset / *.umap must be an LFS pointer, not a real blob.
+          offenders=""
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            if ! git check-attr filter -- "$f" | grep -q 'filter: lfs'; then
+              offenders="$offenders$f\n"
+            fi
+          done < <(git ls-files -- '*.uasset' '*.umap')
+          if [ -n "$offenders" ]; then
+            echo "::error::These assets are not covered by the Git LFS filter:"
+            printf "%b" "$offenders"
+            exit 1
+          fi
+          echo "OK - all .uasset/.umap files are LFS-tracked."
+
+      - name: No oversized non-LFS files
+        run: |
+          # Fail on any committed real blob larger than 1 MB that is not an LFS pointer.
+          limit=$((1024 * 1024))
+          big=""
+          while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            case "$(head -c 40 "$f")" in
+              "version https://git-lfs.github.com/spec/v1"*) continue ;;
+            esac
+            size=$(wc -c < "$f")
+            if [ "$size" -gt "$limit" ]; then
+              big="$big$f ($size bytes)\n"
+            fi
+          done < <(git ls-files)
+          if [ -n "$big" ]; then
+            echo "::error::Large files committed outside Git LFS:"
+            printf "%b" "$big"
+            exit 1
+          fi
+          echo "OK - no oversized non-LFS files."
+
+      - name: .uproject is valid JSON
+        run: |
+          python3 -c "import json,sys; json.load(open('RUNandJUMP.uproject')); print('OK - RUNandJUMP.uproject is valid JSON.')"
