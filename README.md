@@ -49,3 +49,7 @@ Generated folders (`Binaries/`, `Intermediate/`, `DerivedDataCache/`,
 `Saved/`) are excluded via `.gitignore` and are recreated by the editor on
 first open. Unreal binary assets (`.uasset`, `.umap`) are marked as binary
 in `.gitattributes` so Git never tries to diff or merge them.
+
+The `RemoteControl` plugin is enabled (see `RUNandJUMP.uproject`); it exposes
+a `localhost:30010` HTTP API used for editor tooling. Setup for driving the
+editor from an AI/MCP client is in [`docs/mcp-unreal-setup.md`](docs/mcp-unreal-setup.md).
