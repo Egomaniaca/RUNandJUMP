@@ -33,3 +33,7 @@ Plugins/**/Intermediate/
 
 # Local, machine-specific MCP client config (see docs/mcp-unreal-setup.md)
 .mcp.json
+
+# Python bytecode
+__pycache__/
+*.pyc
