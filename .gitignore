@@ -1,0 +1,32 @@
+# Unreal Engine project — ignore generated, cached and local files.
+# Keep: Config/, Content/, Source/, *.uproject, and the repo docs.
+
+# Build / compile output
+Binaries/
+Build/
+!BuildConfiguration/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# Editor / tooling
+.vs/
+.vscode/
+.idea/
+*.VC.db
+*.VC.opendb
+*.opensdf
+*.sdf
+*.sln
+*.suo
+*.xcodeproj
+*.xcworkspace
+
+# OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Plugins can also carry generated folders
+Plugins/**/Binaries/
+Plugins/**/Intermediate/
