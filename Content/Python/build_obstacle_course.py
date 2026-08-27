@@ -41,9 +41,11 @@ STONE_SIZE   = 220.0   # stepping-stone footprint
 PLATE_THICK  = 40.0    # platform slab thickness
 RAMP_THICK   = 30.0    # ramp slab thickness
 
-# Jump gaps, front to back. BP_BOT with UE defaults clears roughly 450-550
-# uu at run speed; the last gaps are meant to be scary. Re-tune to taste.
-JUMP_GAPS    = [320.0, 360.0, 400.0, 460.0, 520.0]
+# Jump gaps, front to back. Tuned for the retuned BP_BOT movement
+# (walk 600, jump_z 720, gravity 1.5, air control 0.75, double jump):
+# a flat jump clears ~590 uu, more with a run-up / hold / second jump.
+# The last two gaps expect a run-up or the air jump.
+JUMP_GAPS    = [380.0, 460.0, 540.0, 640.0, 760.0]
 
 MOVE_PLAYER_START = True    # snap the first PlayerStart onto the start pad
 SET_KILL_Z        = True    # destroy anything that falls below the course
@@ -143,15 +145,15 @@ def build():
         x += 400.0
 
     # 3) ramp up to a raised tier
-    add_ramp(x, z, x + 520.0, z + 260.0, label="OC_RampUp")
-    x += 520.0
-    z += 260.0
+    add_ramp(x, z, x + 560.0, z + 320.0, label="OC_RampUp")
+    x += 560.0
+    z += 320.0
     add_platform(x, x + 500.0, z, label="OC_HighPad")
     x += 500.0
 
-    # 4) drop-gap: jump the gap AND lose height
-    x += 460.0
-    z -= 160.0
+    # 4) drop-gap: clear the gap AND lose height (use the air jump)
+    x += 620.0
+    z -= 220.0
     add_platform(x, x + 460.0, z, label="OC_DropPad")
     x += 460.0
 
