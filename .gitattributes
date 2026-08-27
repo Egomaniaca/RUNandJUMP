@@ -6,10 +6,10 @@
 *.uproject text eol=lf
 *.md       text
 # Unreal binary assets — never diff or merge these as text.
-*.uasset binary
-*.umap   binary
-*.upk    binary
-*.udk    binary
+# .uasset / .umap are tracked with Git LFS (filter set at the bottom of
+# this file); the rest are plain binary.
+*.upk binary
+*.udk binary
 # Common binary asset types that may land in Content/.
 *.png  binary
 *.jpg  binary
