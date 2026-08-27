@@ -1,0 +1,24 @@
+# Normalize text files to LF in the repo, check out native on Windows.
+* text=auto
+
+# Config and project files are text.
+*.ini      text
+*.uproject text eol=lf
+*.md       text
+
+# Unreal binary assets — never diff or merge these as text.
+*.uasset binary
+*.umap   binary
+*.upk    binary
+*.udk    binary
+
+# Common binary asset types that may land in Content/.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.tga  binary
+*.psd  binary
+*.fbx  binary
+*.wav  binary
+*.mp3  binary
+*.ogg  binary
