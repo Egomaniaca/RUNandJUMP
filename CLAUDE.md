@@ -1,4 +1,8 @@
-# RUNandJUMP
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## RUNandJUMP
 
 Vertical climbing game in the **Only Up / Jump King** shape: spiral up a
 tower, one fall costs a section of the climb. Unreal Engine **5.8**,
@@ -7,6 +11,40 @@ tower, one fall costs a section of the climb. Unreal Engine **5.8**,
 Repo: <https://github.com/Egomaniaca/RUNandJUMP> (public)
 
 > The user writes in Russian — reply in Russian.
+
+## Commands
+
+There is no build, lint or test suite: the project has no C++ module, and
+gameplay lives in binary Blueprint assets. The whole toolchain is the
+editor plus the checks below.
+
+```bash
+# Syntax-check the tower generator before running it in the editor
+"D:/EpicGames/UE_5.8/Engine/Binaries/ThirdParty/Python3/Win64/python.exe" \
+  -m py_compile Content/Python/build_tower.py
+```
+
+```bash
+# Restore real asset content when .uasset/.umap files are ~131-byte pointers
+git lfs pull
+```
+
+```bash
+# gh is not on PATH by default
+export PATH="$PATH:/c/Program Files/GitHub CLI"
+```
+
+CI (`.github/workflows/checks.yml`, job `repo-hygiene`) runs on every push
+and PR. To reproduce its four checks locally:
+
+```bash
+git ls-files | grep -E '^(Binaries|Build|Intermediate|DerivedDataCache|Saved)/'
+git ls-files -- '*.uasset' '*.umap' | while read -r f; do
+  git check-attr filter -- "$f" | grep -q 'filter: lfs' || echo "not LFS: $f"; done
+node -e "JSON.parse(require('fs').readFileSync('RUNandJUMP.uproject','utf8'))"
+```
+
+(The fourth is "no non-LFS file over 1 MB"; the workflow has the loop.)
 
 ## Design rules (decided with the user, don't quietly break them)
 
