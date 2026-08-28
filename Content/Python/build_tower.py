@@ -70,9 +70,15 @@ MATERIALS = {
     "*": "/Engine/EngineMaterials/WorldGridMaterial.WorldGridMaterial",
 }
 
-# Catch tiers: a wide disc on the tower axis at the end of every section.
-# A fall drops you to the tier below instead of all the way to the ground,
-# so you lose a section of progress rather than the whole climb.
+# Catch tiers: a wide disc on the tower axis that stops a fall partway.
+#
+# EMPTY BY DESIGN. A tier is a ceiling as well as a floor: the platforms
+# below it sit inside its footprint, so the climb runs head-first into its
+# underside. Tiers must therefore be RARE and placed only where the spiral
+# is clear of them. List the section names to cap, e.g. ["Narrow"], once
+# you have picked spots.
+TIER_AFTER_SECTIONS = []
+
 TIER_SIZE = 3000.0           # must cover the spiral radius so falls land on it
 TIER_THICK = 90.0
 TIER_APPROACH_SIZE = 440.0   # ledge just outside the tier rim, to jump on from
@@ -223,6 +229,30 @@ def lerp(a, b, t):
     return a + (b - a) * t
 
 
+def advance(cx, cy, prev_pos, radius, want_dist):
+    """Angle step that puts the next point `want_dist` from the previous one.
+
+    The previous point may sit on a different radius (sections change radius,
+    and shelves walk outward), so this solves the triangle properly instead of
+    assuming a common circle:
+
+        d^2 = r_prev^2 + R^2 - 2*r_prev*R*cos(dtheta)
+
+    Two points on circles of radius r_prev and R can never be closer than
+    |R - r_prev|; if `want_dist` asks for less, the step collapses to 0 and
+    the caller gets that minimum. Returns (dtheta, achievable_distance).
+    """
+    r_prev = math.hypot(prev_pos[0] - cx, prev_pos[1] - cy)
+    if r_prev < 1e-3 or radius < 1e-3:
+        return 0.0, abs(radius - r_prev)
+    cos_d = (r_prev ** 2 + radius ** 2 - want_dist ** 2) / (2.0 * r_prev * radius)
+    cos_d = max(-1.0, min(1.0, cos_d))
+    dtheta = math.acos(cos_d)
+    actual = math.sqrt(max(r_prev ** 2 + radius ** 2
+                           - 2.0 * r_prev * radius * math.cos(dtheta), 0.0))
+    return dtheta, actual
+
+
 # ---------------------------------------------------------------- build --
 def build():
     clear_tower()
@@ -242,10 +272,9 @@ def build():
     warnings = 0
 
     for s_i, sec in enumerate(SECTIONS):
-        # Every section is capped by a catch tier: a wide disc on the tower
-        # axis. You reach it via a ledge sitting just outside its rim, so
-        # you jump inward onto the edge rather than into its underside.
-        if s_i > 0:
+        # A catch tier caps this section only if it was asked for. A tier is
+        # also a ceiling, so it is opt-in per section rather than automatic.
+        if s_i > 0 and SECTIONS[s_i - 1]["name"] in TIER_AFTER_SECTIONS:
             tier_half = TIER_SIZE * 0.5
             appr_r = tier_half + TIER_APPROACH_GAP
 
@@ -306,14 +335,10 @@ def build():
                 dz = jump.max_rise * 0.75
                 reach = jump.reach(dz)
 
-            # Edge-to-edge gap we want, converted to a centre-to-centre chord.
-            gap = sec["difficulty"] * reach
-            chord = gap + prev_half + size * 0.5
-
-            max_chord = 2.0 * radius * 0.999
-            if chord > max_chord:
-                chord = max_chord
-            theta += 2.0 * math.asin(chord / (2.0 * radius))
+            # Edge-to-edge gap we want, as a centre-to-centre distance.
+            want = sec["difficulty"] * reach + prev_half + size * 0.5
+            dtheta, _ = advance(cx, cy, prev_pos, radius, want)
+            theta += dtheta
 
             z += dz
             px = cx + radius * math.cos(theta)
@@ -344,7 +369,7 @@ def build():
 
     unreal.log("[tower] built %d platforms + %d catch tiers, summit at "
                "Z=%.0f (%.1f m)"
-               % (index, len(SECTIONS) - 1, z, (z - base_z) / 100.0))
+               % (index, len(TIER_AFTER_SECTIONS), z, (z - base_z) / 100.0))
     if warnings:
         unreal.log_warning("[tower] %d reachability warnings - see above"
                            % warnings)
