@@ -48,13 +48,37 @@ SECTIONS = [
     dict(name="Base",    count=6,  dz=(90, 110),   size=(460, 400), radius=760,  difficulty=0.42),
     dict(name="Spiral",  count=8,  dz=(105, 125),  size=(380, 320), radius=820,  difficulty=0.52),
     dict(name="Narrow",  count=8,  dz=(110, 130),  size=(300, 240), radius=780,  difficulty=0.60),
-    dict(name="Leap",    count=6,  dz=(95, 115),   size=(300, 260), radius=1050, difficulty=0.72),
+    dict(name="Leap",    count=6,  dz=(95, 115),   size=(300, 260), radius=1000, difficulty=0.72),
     dict(name="Pillars", count=8,  dz=(115, 140),  size=(220, 170), radius=740,  difficulty=0.70),
     dict(name="Spire",   count=8,  dz=(120, 145),  size=(190, 150), radius=620,  difficulty=0.78),
     dict(name="Summit",  count=3,  dz=(100, 115),  size=(420, 520), radius=420,  difficulty=0.45),
 ]
 
-REST_LEDGE_SIZE = 520.0      # a wide breather platform between sections
+# ---- ART -----------------------------------------------------------------
+# Swap in downloaded Fab / Megascans content here; the layout never changes.
+# Anything that fails to load falls back to the grid material, so a missing
+# asset degrades gracefully instead of breaking the build.
+#
+# MESH: any static mesh works, but it must be a UNIT-ish shape that scales
+# cleanly -- a cube is ideal. A decorative rock will stretch.
+PLATFORM_MESH = "/Engine/BasicShapes/Cube.Cube"
+
+# MATERIALS: assign per section name; "*" is the fallback for anything
+# unnamed (tiers, shelves, ground). Example once Megascans are imported:
+#   "Base": "/Game/Megascans/Surfaces/Rock_Cliff/MI_Rock_Cliff",
+MATERIALS = {
+    "*": "/Engine/EngineMaterials/WorldGridMaterial.WorldGridMaterial",
+}
+
+# Catch tiers: a wide disc on the tower axis at the end of every section.
+# A fall drops you to the tier below instead of all the way to the ground,
+# so you lose a section of progress rather than the whole climb.
+TIER_SIZE = 3000.0           # must cover the spiral radius so falls land on it
+TIER_THICK = 90.0
+TIER_APPROACH_SIZE = 440.0   # ledge just outside the tier rim, to jump on from
+TIER_APPROACH_GAP = 240.0    # how far outside the rim that ledge sits
+TIER_STEP_SIZE = 380.0       # pads of the shelf that walks out to that ledge
+
 MOVE_PLAYER_START = True
 CLEAR_KILL_Z = True          # push KillZ far below: a fall must NOT kill
 
@@ -64,9 +88,37 @@ PAWN_CLASS_PATH = "/Game/Player/BP_BOT.BP_BOT_C"
 GRAVITY_CM = 980.0
 # ========================================================================
 
-_CUBE = unreal.load_asset("/Engine/BasicShapes/Cube.Cube")
-_GRID_MAT = unreal.load_asset("/Engine/EngineMaterials/WorldGridMaterial.WorldGridMaterial")
 _actors = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+
+
+def _load(path, what):
+    """Load an asset, warning once and returning None if it isn't there."""
+    if not path:
+        return None
+    asset = unreal.load_asset(path)
+    if asset is None:
+        unreal.log_warning("[tower] %s not found: %s" % (what, path))
+    return asset
+
+
+_MESH = (_load(PLATFORM_MESH, "mesh")
+         or unreal.load_asset("/Engine/BasicShapes/Cube.Cube"))
+_MAT_CACHE = {}
+
+
+def _material_for(label):
+    """Material for a pad, chosen by the section name inside its label."""
+    for name, path in MATERIALS.items():
+        if name != "*" and name in label:
+            if path not in _MAT_CACHE:
+                _MAT_CACHE[path] = _load(path, "material")
+            if _MAT_CACHE[path]:
+                return _MAT_CACHE[path]
+            break
+    fallback = MATERIALS.get("*")
+    if fallback not in _MAT_CACHE:
+        _MAT_CACHE[fallback] = _load(fallback, "material")
+    return _MAT_CACHE[fallback]
 
 
 # ------------------------------------------------------------ jump math --
@@ -118,9 +170,10 @@ def _spawn_box(location, scale, label):
     actor = _actors.spawn_actor_from_class(unreal.StaticMeshActor, location)
     smc = actor.static_mesh_component
     smc.set_mobility(unreal.ComponentMobility.MOVABLE)
-    smc.set_static_mesh(_CUBE)
-    if _GRID_MAT:
-        smc.set_material(0, _GRID_MAT)
+    smc.set_static_mesh(_MESH)
+    mat = _material_for(label)
+    if mat:
+        smc.set_material(0, mat)
     actor.set_actor_scale3d(scale)
     smc.set_mobility(unreal.ComponentMobility.STATIC)
     actor.set_actor_label(label)
@@ -189,20 +242,54 @@ def build():
     warnings = 0
 
     for s_i, sec in enumerate(SECTIONS):
-        # A wide rest ledge announces each new section (except the first).
+        # Every section is capped by a catch tier: a wide disc on the tower
+        # axis. You reach it via a ledge sitting just outside its rim, so
+        # you jump inward onto the edge rather than into its underside.
         if s_i > 0:
-            dz = 100.0
-            reach = jump.reach(dz)
-            chord = min(0.40 * reach + prev_half + REST_LEDGE_SIZE * 0.5,
-                        2.0 * sec["radius"] * 0.999)
-            theta += 2.0 * math.asin(chord / (2.0 * sec["radius"]))
+            tier_half = TIER_SIZE * 0.5
+            appr_r = tier_half + TIER_APPROACH_GAP
+
+            # 1) A shelf that walks outward from the spiral to just past the
+            #    tier rim. Without it the approach ledge would be further
+            #    from the spiral than one jump can cover: two points on
+            #    circles of radius r1 and r2 are never closer than |r1-r2|.
+            r_now = math.hypot(prev_pos[0] - cx, prev_pos[1] - cy)
+            step_i = 0
+            while r_now < appr_r - 1.0:
+                dz = 90.0
+                reach = jump.reach(dz)
+                want = 0.40 * reach + prev_half + TIER_STEP_SIZE * 0.5
+                r_next = min(r_now + want, appr_r)
+                theta += 0.10          # a little swing so it reads as a shelf
+                z += dz
+                sx = cx + r_next * math.cos(theta)
+                sy = cy + r_next * math.sin(theta)
+                step_i += 1
+                add_pad(sx, sy, z, TIER_STEP_SIZE,
+                        "OC_Shelf_%s_%02d" % (sec["name"], step_i))
+                prev_half = TIER_STEP_SIZE * 0.5
+                prev_pos = (sx, sy)
+                r_now = r_next
+
+            # 2) approach ledge, sitting just outside the tier rim
+            dz = 95.0
             z += dz
-            px = cx + sec["radius"] * math.cos(theta)
-            py = cy + sec["radius"] * math.sin(theta)
-            add_pad(px, py, z, REST_LEDGE_SIZE,
-                    "OC_Rest_%s" % sec["name"])
-            prev_half = REST_LEDGE_SIZE * 0.5
-            prev_pos = (px, py)
+            ax = cx + appr_r * math.cos(theta)
+            ay = cy + appr_r * math.sin(theta)
+            add_pad(ax, ay, z, TIER_APPROACH_SIZE,
+                    "OC_Approach_%s" % sec["name"])
+
+            # 3) the tier itself: jump inward and up onto its rim
+            z += 110.0
+            add_pad(cx, cy, z, TIER_SIZE, "OC_Tier_%s" % sec["name"],
+                    thickness=TIER_THICK)
+
+            # Standing anywhere on the tier, so the next jump starts from
+            # directly under the first platform of the section: purely
+            # vertical, no horizontal gap.
+            prev_half = 0.0
+            prev_pos = (cx + sec["radius"] * math.cos(theta),
+                        cy + sec["radius"] * math.sin(theta))
 
         for i in range(sec["count"]):
             t = i / float(max(sec["count"] - 1, 1))
@@ -255,8 +342,9 @@ def build():
     if MOVE_PLAYER_START:
         move_player_start(unreal.Vector(cx, cy, base_z + 130.0))
 
-    unreal.log("[tower] built %d platforms, summit at Z=%.0f (%.1f m)"
-               % (index, z, (z - base_z) / 100.0))
+    unreal.log("[tower] built %d platforms + %d catch tiers, summit at "
+               "Z=%.0f (%.1f m)"
+               % (index, len(SECTIONS) - 1, z, (z - base_z) / 100.0))
     if warnings:
         unreal.log_warning("[tower] %d reachability warnings - see above"
                            % warnings)
