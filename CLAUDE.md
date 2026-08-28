@@ -108,13 +108,26 @@ The editor must be running with the level open. Requires (already on in
 Project Settings → Remote Control): **Allow Any Remote Function Call** and
 **Enable Remote Python Execution**.
 
-### Lead: Epic's own MCP server
+### Epic's own MCP server — investigated, currently a dead end
 
-UE 5.8 ships `ModelContextProtocol` ("Unreal MCP", by Epic, Experimental)
-— HTTP+SSE on port **8000**, path `/mcp`. The plugin is enabled in the
-`.uproject` but the server is **not started** (no listener on 8000; it
-needs `StartServer`). This would likely beat the third-party bridge —
-worth finishing if editor control gets limiting.
+UE 5.8 ships `ModelContextProtocol` ("Unreal MCP", Epic, Experimental).
+It **works**: enabled in the `.uproject`, autostart written to
+`Saved/Config/WindowsEditor/EditorPerProjectUserSettings.ini`
+(`[/Script/ModelContextProtocolEngine.ModelContextProtocolSettings]`,
+`bAutoStartServer=True`, `ServerPortNumber=8000`), and it can be started
+on demand with the console command `ModelContextProtocol.StartServer 8000`.
+It answers `initialize` correctly on `http://localhost:8000/mcp`.
+
+**But `tools/list` returns 0 tools.** Epic's MCP is a *framework* for
+exposing your own tools through the ToolsetRegistry, not a ready-made
+editor-control server. Tools come from
+`ModelContextProtocolToolLibraryBlueprint` assets — a Blueprint function
+library where each public function becomes an MCP tool.
+
+So it is only useful once someone authors those tool libraries, which
+needs Blueprint graph work. Until then the `mcp-unreal` +
+`ExecutePythonCommand` route below is strictly more capable. Don't
+re-investigate from scratch.
 
 ## What cannot be done over the bridge
 
